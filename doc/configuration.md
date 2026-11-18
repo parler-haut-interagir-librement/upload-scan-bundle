@@ -14,11 +14,13 @@ phil_upload_scan:
     quarantine:
         enabled: true
         directory: '%kernel.project_dir%/var/quarantine'
+        tighten_open_directory: true    # false refuses a directory open to other users instead of narrowing it
         service: null                   # the id of a Quarantine service, instead of the directory
         retention_days: 30              # how long phil:upload-scan:purge-quarantine keeps a file
     rescan:
         transport: null                 # the Messenger transport RescanFile is routed to, such as async
     admin:
+        enabled: true                   # false leaves the quarantine's page, and its CSRF check, out
         role: ROLE_ADMIN                # the role, or a voter's attribute, that opens the quarantine's page
         layout: '@PhilUploadScan/admin/layout.html.twig'
         page_size: 50                   # 1 to 500 files a page
@@ -61,11 +63,13 @@ An infected file is refused under both.
 
 ## `quarantine`
 
-Infected files are copied to `directory`, created readable by its owner only. A directory under `public/` of the
-project is refused when the container is built: the web server would serve what it holds. `service` names a
-`Quarantine` of the application instead; `enabled: false`, or `quarantine: false`, refuses infected files without
-keeping them. `retention_days`, 30 by default and at least 1, is how long the purge command keeps a file. See
-[Quarantine and events](quarantine-and-events.md).
+Infected files are copied to `directory`, created readable by its owner only. A directory that already exists and is
+open to its group or to other users is narrowed to `0700` before a file is kept in it; with
+`tighten_open_directory: false`, or when it cannot be narrowed, the file is refused and not kept. A directory under
+`public/` of the project is refused when the container is built: the web server would serve what it holds. `service` names a `Quarantine` of the
+application instead; `enabled: false`, or `quarantine: false`, refuses infected files without keeping them.
+`retention_days`, 30 by default and at least 1, is how long the purge command keeps a file. See [Quarantine and
+events](quarantine-and-events.md).
 
 ## `rescan`
 
@@ -79,6 +83,11 @@ routed is handled as it is dispatched. See [Rescans](rescans.md).
 The administration page of the quarantine, wired with Twig and `symfony/security-csrf` once its routes are imported:
 `role` opens it, `layout` is the template it extends, and `page_size` the files listed a page. See
 [Quarantine and events](quarantine-and-events.md#the-administration-page).
+
+Its deletions require the stateless CSRF token `phil_upload_scan_quarantine`, by default and with nothing to turn on;
+FrameworkBundle's `csrf_protection` must then stay on, or the container does not build. `enabled: false` leaves the
+page, its controller and its check out, for an application that installed the CSRF component for its own forms and
+turns the protection off. See [CSRF](csrf.md).
 
 ## `integrations`
 

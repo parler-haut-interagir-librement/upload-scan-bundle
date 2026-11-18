@@ -1,4 +1,4 @@
-<!-- phil-dev source-sha256=c7ba0fdc39030e7d6c39322f1958cdc1c5750cdc4884461644449c5566599b9f -->
+<!-- phil-dev source-sha256=593df5c12941366f01fac0e1ade4dc52962538b0c7bc676b7e014cbf666ec6ca -->
 # Quarantaine et événements
 
 ## La quarantaine
@@ -23,8 +23,16 @@ var/quarantine/                              drwx------
 
 - L'identifiant compte 32 chiffres hexadécimaux aléatoires. Rien de ce que l'expéditeur a choisi ne devient un
   chemin : le nom qu'il a donné n'est qu'un champ de la fiche, sans ses caractères de contrôle, coupé à 255 octets.
-- Le répertoire est créé lisible par son propriétaire seulement, et chaque fichier est lu et écrit par son propriétaire
-  seulement.
+- Le répertoire est créé lisible par son propriétaire seulement (`0700`), et chaque fichier est lu et écrit par son
+  propriétaire seulement (`0600`) dès qu'il existe : la copie et la fiche sont écrites sous forme de fichiers
+  temporaires du répertoire, `.phil-quarantine-` suivi de caractères aléatoires, créés en `0600` par `tempnam()`, puis
+  reçoivent leurs noms en une seule étape, la fiche en dernier. Une copie qui échoue ne laisse aucun des deux fichiers,
+  ni aucun fichier temporaire.
+- Un répertoire qui existe déjà et qui est ouvert à son groupe ou à d'autres utilisateurs — créé à la main avec `0755`,
+  ou monté ainsi — est restreint à `0700` avant qu'un fichier y soit conservé. Quand il ne peut pas l'être, parce
+  qu'un autre utilisateur en est le propriétaire, ou quand `tighten_open_directory` est faux, `QuarantineFailed` nomme
+  le répertoire et son mode, et rien n'est écrit. Un répertoire atteint par un lien symbolique est utilisé là où le
+  lien pointe.
 - Un répertoire sous `public/` est refusé à la construction du conteneur, et aucune route du bundle ne sert ce que
   contient la quarantaine : un fichier infecté n'est jamais téléchargé depuis le site. Gardez le répertoire hors des
   sauvegardes restaurées à des endroits que sert le serveur Web.
@@ -36,8 +44,9 @@ journalisé comme une erreur, `quarantineId` vaut `null`, et le fichier est tout
 
 ## La page d'administration
 
-Avec Twig et `symfony/security-csrf`, le bundle enregistre `QuarantineAdminController`, la page où un opérateur lit la
-quarantaine et supprime les fichiers traités. Importez ses routes derrière le pare-feu de l'application :
+Avec Twig et `symfony/security-csrf`, et sauf si `admin.enabled` vaut `false`, le bundle enregistre
+`QuarantineAdminController`, la page où un opérateur lit la quarantaine et supprime les fichiers traités. Importez ses
+routes derrière le pare-feu de l'application :
 
 ```yaml
 # config/routes/phil_upload_scan_admin.yaml
@@ -53,8 +62,8 @@ phil_upload_scan_admin:
 
 Chaque fichier montre le nom sous lequel il a été envoyé, la signature qui l'a condamné, le moment où il a été conservé,
 sa taille et son identifiant, celui que `FileInfected` portait. Ce qu'un fichier contient n'est jamais montré ni servi :
-un opérateur qui doit en regarder un le lit sur le serveur. Une suppression sans jeton CSRF valide répond `400`, celle
-d'un identifiant que la quarantaine ne détient pas `404` ; une suppression qui aboutit est journalisée au niveau
+un opérateur qui doit en regarder un le lit sur le serveur. Une suppression sans jeton CSRF valide répond `400` (voir
+[CSRF](csrf.md)), celle d'un identifiant que la quarantaine ne détient pas `404` ; une suppression qui aboutit est journalisée au niveau
 `notice` avec son identifiant et renvoie le navigateur à la liste par un `303`.
 
 Chaque page demande à la sécurité de l'application `admin.role`, `ROLE_ADMIN` par défaut (un rôle, ou l'attribut d'un

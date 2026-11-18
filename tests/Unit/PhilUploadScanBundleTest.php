@@ -22,6 +22,7 @@ use Phil\UploadScanBundle\Application\RescanFileHandler;
 use Phil\UploadScanBundle\Application\UploadScanner;
 use Phil\UploadScanBundle\Infrastructure\Admin\QuarantineAdminController;
 use Phil\UploadScanBundle\Infrastructure\Console\PurgeQuarantineCommand;
+use Phil\UploadScanBundle\Infrastructure\DependencyInjection\CsrfProtectionPass;
 use Phil\UploadScanBundle\Infrastructure\DependencyInjection\QuarantineInventoryPass;
 use Phil\UploadScanBundle\Infrastructure\Media\ScanningMediaStorage;
 use Phil\UploadScanBundle\Infrastructure\Monitoring\ScannerHealthCheck;
@@ -159,7 +160,9 @@ final class PhilUploadScanBundleTest extends TestCase
     {
         $default = $this->load([]);
         self::assertSame(FilesystemQuarantine::class, (string) $default->getAlias(Quarantine::class));
-        self::assertEquals(['%kernel.project_dir%/var/quarantine', new Reference('clock', ContainerInterface::NULL_ON_INVALID_REFERENCE)], $default->getDefinition(FilesystemQuarantine::class)->getArguments());
+        self::assertEquals(['%kernel.project_dir%/var/quarantine', new Reference('clock', ContainerInterface::NULL_ON_INVALID_REFERENCE), true], $default->getDefinition(FilesystemQuarantine::class)->getArguments());
+
+        self::assertFalse($this->load(['quarantine' => ['tighten_open_directory' => false]])->getDefinition(FilesystemQuarantine::class)->getArgument(2));
 
         $service = $this->load(['quarantine' => ['service' => 'app.quarantine']]);
         self::assertSame('app.quarantine', (string) $service->getAlias(Quarantine::class));
@@ -209,11 +212,12 @@ final class PhilUploadScanBundleTest extends TestCase
 
     public function testRescanFileIsRoutedToTheConfiguredTransport(): void
     {
+        $csrf = ['csrf_protection' => ['stateless_token_ids' => [QuarantineAdminController::CSRF_TOKEN_ID]]];
         $container = $this->prepended([['rescan' => ['transport' => 'async']], ['rescan' => ['transport' => 'scans']]]);
-        self::assertSame([['messenger' => ['routing' => [RescanFile::class => 'scans']]], ['secret' => 'test']], $container->getExtensionConfig('framework'));
+        self::assertSame([['messenger' => ['routing' => [RescanFile::class => 'scans']]], $csrf, ['secret' => 'test']], $container->getExtensionConfig('framework'));
 
         foreach ([[], [['rescan' => ['transport' => 'async']], ['rescan' => ['transport' => null]]], [['rescan' => []]], [['rescan' => 'async']]] as $configs) {
-            self::assertSame([['secret' => 'test']], $this->prepended($configs)->getExtensionConfig('framework'));
+            self::assertSame([$csrf, ['secret' => 'test']], $this->prepended($configs)->getExtensionConfig('framework'));
         }
 
         self::assertSame([], $this->prepended([['rescan' => ['transport' => 'async']]], false)->getExtensionConfig('framework'));
@@ -367,6 +371,26 @@ final class PhilUploadScanBundleTest extends TestCase
                 self::assertStringContainsString('page_size', $invalidConfigurationException->getMessage());
             }
         }
+    }
+
+    public function testTheAdministrationCanBeLeftOut(): void
+    {
+        self::assertTrue($this->load(['admin' => ['enabled' => true]])->hasDefinition(QuarantineAdminController::class));
+        self::assertFalse($this->load(['admin' => ['enabled' => false]])->hasDefinition(QuarantineAdminController::class));
+        self::assertFalse($this->load(['admin' => false])->hasDefinition(QuarantineAdminController::class));
+        self::assertTrue($this->load(['admin' => false])->hasDefinition(UploadScanner::class));
+    }
+
+    public function testTheBundleRegistersThePassThatChecksTheCsrfProtection(): void
+    {
+        $container = new ContainerBuilder();
+        new PhilUploadScanBundle()->build($container);
+
+        $passes = array_values(array_filter($container->getCompilerPassConfig()->getBeforeOptimizationPasses(), static fn (object $pass): bool => $pass instanceof QuarantineInventoryPass || $pass instanceof CsrfProtectionPass));
+        self::assertCount(2, $passes);
+        // The administration removed for want of an inventory needs no token manager: the inventory is settled first.
+        self::assertInstanceOf(QuarantineInventoryPass::class, $passes[0]);
+        self::assertInstanceOf(CsrfProtectionPass::class, $passes[1]);
     }
 
     public function testTheBundleRegistersThePassThatGivesTheInventory(): void
