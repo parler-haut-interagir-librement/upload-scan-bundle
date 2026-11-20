@@ -4,9 +4,25 @@ All notable changes to `phil/upload-scan-bundle` will be documented in this file
 
 Updates should follow the [Keep a CHANGELOG](https://keepachangelog.com/) principles.
 
+## 0.1.2-alpha - 2026-11-20
+
+A quarantine that reaches `public/` through a symbolic link is refused like one
+written under it.
+
+### Added
+
+- The [ASVS 5.0 mapping](doc/asvs.md), and the order of validation and vote for `#[MapUploadedFile]` in
+  [Validation](doc/validation.md#check-access-before-the-scan).
+
+### Security
+
+- The quarantine directory was compared with `public/` as written: a `var/quarantine` linked into `public/`, or a
+  `public/` linked to the directory's parent, passed, and the web server would have served the infected files. Both
+  paths are compared once their symbolic links are followed too.
+
 ## 0.1.1-alpha - 2026-11-18
 
-The next version is 0.1.1-alpha: a quarantined file and its record are readable by their owner alone from the moment
+A quarantined file and its record are readable by their owner alone from the moment
 they exist, and an open quarantine directory is narrowed to its owner. See
 [Quarantine and events](doc/quarantine-and-events.md).
 
